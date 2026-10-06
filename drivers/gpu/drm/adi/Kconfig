@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: GPL-2.0-only
+config DRM_ADI_AXI_HDMI_TX
+	tristate "Analog Devices AXI HDMI TX"
+	depends on DRM && OF && DMA_ENGINE
+	depends on ARCH_ZYNQ || COMPILE_TEST
+	select DRM_BRIDGE_CONNECTOR
+	select DRM_CLIENT_SELECTION
+	select DRM_DISPLAY_HELPER
+	select DRM_GEM_DMA_HELPER
+	select DRM_KMS_HELPER
+	help
+	  Display driver for the Analog Devices AXI HDMI TX FPGA core, as used
+	  in the ADI reference designs for ZedBoard and similar Zynq boards.
+	  The core scans out a framebuffer through an AXI-DMAC and feeds an
+	  external HDMI transmitter such as the ADV7511.
+
+	  To compile this driver as a module, choose M here: the module will
+	  be called adi_axi_hdmi_tx.

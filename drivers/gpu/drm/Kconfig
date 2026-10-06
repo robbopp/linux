@@ -299,6 +299,7 @@ config DRM_PRIVACY_SCREEN
 	default n
 
 # DRM driver Kconfig files, sorted
+source "drivers/gpu/drm/adi/Kconfig"
 source "drivers/gpu/drm/adp/Kconfig"
 source "drivers/gpu/drm/amd/amdgpu/Kconfig"
 source "drivers/gpu/drm/arm/Kconfig"
