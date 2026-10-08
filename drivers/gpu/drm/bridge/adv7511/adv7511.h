@@ -365,7 +365,10 @@ struct adv7511 {
 
 	unsigned int current_edid_segment;
 	uint8_t edid_buf[256];
+	/* Set when a load finishes, successfully or not; see edid_error. */
 	bool edid_read;
+	/* Set when the load that set edid_read failed. */
+	bool edid_error;
 
 	wait_queue_head_t wq;
 	struct work_struct hpd_work;

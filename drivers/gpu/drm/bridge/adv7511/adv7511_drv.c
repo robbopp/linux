@@ -459,6 +459,14 @@ static int adv7511_irq_process(struct adv7511 *adv7511, bool process_hpd)
 	}
 
 	if (irq0 & ADV7511_INT0_EDID_READY || irq1 & ADV7511_INT1_DDC_ERROR) {
+		if (irq1 & ADV7511_INT1_DDC_ERROR)
+			adv7511->edid_error = true;
+
+		/*
+		 * A waiter wakes on edid_read; make sure it also sees
+		 * edid_error set above.
+		 */
+		smp_wmb();
 		adv7511->edid_read = true;
 
 		if (adv7511->i2c_main->irq)
@@ -510,7 +518,9 @@ static int adv7511_wait_for_edid(struct adv7511 *adv7511, int timeout)
 		}
 	}
 
-	return adv7511->edid_read ? 0 : -EIO;
+	/* Pairs with the smp_wmb() in adv7511_irq_process(). */
+	smp_rmb();
+	return adv7511->edid_read && !adv7511->edid_error ? 0 : -EIO;
 }
 
 static int adv7511_get_edid_block(void *data, u8 *buf, unsigned int block,
@@ -543,6 +553,7 @@ static int adv7511_get_edid_block(void *data, u8 *buf, unsigned int block,
 		regmap_write(adv7511->regmap, ADV7511_REG_INT(1),
 			     ADV7511_INT1_DDC_ERROR);
 		adv7511->edid_read = false;
+		adv7511->edid_error = false;
 
 		ret = regmap_read(adv7511->regmap, ADV7511_REG_EDID_SEGMENT,
 				  &requested);
