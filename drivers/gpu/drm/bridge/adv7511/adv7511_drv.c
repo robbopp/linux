@@ -107,7 +107,7 @@ static bool adv7511_register_volatile(struct device *dev, unsigned int reg)
 	case ADV7511_REG_BKSV(1):
 	case ADV7511_REG_BKSV(2):
 	case ADV7511_REG_BKSV(3):
-	case ADV7511_REG_BKSV(4):
+	case ADV7511_REG_BKSV(4): /* also ADV7511_REG_EDID_SEGMENT (0xc4) */
 	case ADV7511_REG_DDC_STATUS:
 	case ADV7511_REG_EDID_READ_CTRL:
 	case ADV7511_REG_BSTATUS(0):
@@ -518,6 +518,7 @@ static int adv7511_get_edid_block(void *data, u8 *buf, unsigned int block,
 {
 	struct adv7511 *adv7511 = data;
 	struct i2c_msg xfer[2];
+	unsigned int segment = block / 2;
 	uint8_t offset;
 	unsigned int i;
 	int ret;
@@ -525,22 +526,53 @@ static int adv7511_get_edid_block(void *data, u8 *buf, unsigned int block,
 	if (len > 128)
 		return -EINVAL;
 
-	if (adv7511->current_edid_segment != block / 2) {
-		unsigned int status;
+	if (adv7511->current_edid_segment != segment) {
+		unsigned int requested, status;
 
+		/*
+		 * Drop an EDID-ready or DDC-error latched by an earlier read
+		 * (the bits stay set when the interrupt is masked). A stale
+		 * DDC error ends the wait just as early as a stale EDID-ready
+		 * does, since adv7511_irq_process() treats it the same way.
+		 * Clearing both before looking at the DDC state means a load
+		 * that completes in between shows up as idle below rather
+		 * than being missed.
+		 */
+		regmap_write(adv7511->regmap, ADV7511_REG_INT(0),
+			     ADV7511_INT0_EDID_READY);
+		regmap_write(adv7511->regmap, ADV7511_REG_INT(1),
+			     ADV7511_INT1_DDC_ERROR);
+		adv7511->edid_read = false;
+
+		ret = regmap_read(adv7511->regmap, ADV7511_REG_EDID_SEGMENT,
+				  &requested);
+		if (ret < 0)
+			return ret;
 		ret = regmap_read(adv7511->regmap, ADV7511_REG_DDC_STATUS,
 				  &status);
 		if (ret < 0)
 			return ret;
+		status &= ADV7511_DDC_STATE_MASK;
 
-		if (status != 2) {
-			adv7511->edid_read = false;
+		ret = 0;
+		if (requested != segment) {
+			/* Only a change of 0xC4 starts a load */
 			regmap_write(adv7511->regmap, ADV7511_REG_EDID_SEGMENT,
-				     block);
+				     segment);
 			ret = adv7511_wait_for_edid(adv7511, 200);
-			if (ret < 0)
-				return ret;
+		} else if (status < ADV7511_DDC_STATE_IDLE) {
+			/*
+			 * Below idle the chip is still in reset or loading on
+			 * its own (e.g. right after power-on or a hotplug).
+			 */
+			ret = adv7511_wait_for_edid(adv7511, 200);
 		}
+		/*
+		 * else: idle or a later (HDCP) state, the buffer holds
+		 * this segment
+		 */
+		if (ret < 0)
+			return ret;
 
 		/* Break this apart, hopefully more I2C controllers will
 		 * support 64 byte transfers than 256 byte transfers
@@ -569,7 +601,7 @@ static int adv7511_get_edid_block(void *data, u8 *buf, unsigned int block,
 			offset += 64;
 		}
 
-		adv7511->current_edid_segment = block / 2;
+		adv7511->current_edid_segment = segment;
 	}
 
 	if (block % 2 == 0)
@@ -588,6 +620,9 @@ static const struct drm_edid *adv7511_edid_read(struct adv7511 *adv7511,
 						struct drm_connector *connector)
 {
 	const struct drm_edid *drm_edid;
+
+	/* Never serve a previous sink's buffer: always reload segment 0 */
+	adv7511->current_edid_segment = -1;
 
 	/* Reading the EDID only works if the device is powered */
 	if (!adv7511->powered) {
