@@ -216,28 +216,18 @@ static void adv7511_set_config_csc(struct adv7511 *adv7511,
 				   bool rgb)
 {
 	struct adv7511_video_config config;
-	bool output_format_422, output_format_ycbcr;
 	unsigned int mode;
 
 	if (rgb) {
 		config.csc_enable = false;
-		output_format_422 = false;
-		output_format_ycbcr = false;
 	} else {
+		/*
+		 * Only RGB 4:4:4 is advertised to the HDMI helpers, which then
+		 * send an AVI infoframe saying RGB: always convert to RGB.
+		 */
+		config.csc_enable = true;
 		config.csc_scaling_factor = ADV7511_CSC_SCALING_4;
 		config.csc_coefficents = adv7511_csc_ycbcr_to_rgb;
-
-		if ((connector->display_info.color_formats &
-		     BIT(DRM_OUTPUT_COLOR_FORMAT_YCBCR422)) &&
-		    connector->display_info.is_hdmi) {
-			config.csc_enable = false;
-			output_format_422 = true;
-			output_format_ycbcr = true;
-		} else {
-			config.csc_enable = true;
-			output_format_422 = false;
-			output_format_ycbcr = false;
-		}
 	}
 
 	if (connector->display_info.is_hdmi)
@@ -249,8 +239,8 @@ static void adv7511_set_config_csc(struct adv7511 *adv7511,
 			     config.csc_coefficents,
 			     config.csc_scaling_factor);
 
-	regmap_update_bits(adv7511->regmap, ADV7511_REG_VIDEO_INPUT_CFG1, 0x81,
-			   (output_format_422 << 7) | output_format_ycbcr);
+	/* RGB 4:4:4 output */
+	regmap_update_bits(adv7511->regmap, ADV7511_REG_VIDEO_INPUT_CFG1, 0x81, 0);
 
 	regmap_update_bits(adv7511->regmap, ADV7511_REG_HDCP_HDMI_CFG,
 			   ADV7511_HDMI_CFG_MODE_MASK, mode);
