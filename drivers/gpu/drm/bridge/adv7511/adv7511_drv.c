@@ -211,9 +211,19 @@ static const uint16_t adv7511_csc_ycbcr_to_rgb[] = {
 	0x0000, 0x04ad, 0x087c, 0x1b77,
 };
 
+/*
+ * BT.709 limited range YCbCr to limited range (16-235) RGB; the table above
+ * gives full range RGB.
+ */
+static const uint16_t adv7511_csc_ycbcr_to_rgb_limited[] = {
+	0x0629, 0x0400, 0x0000, 0x1ceb,
+	0x1e2b, 0x0400, 0x1f44, 0x0148,
+	0x0000, 0x0400, 0x0742, 0x1c5f,
+};
+
 static void adv7511_set_config_csc(struct adv7511 *adv7511,
 				   struct drm_connector *connector,
-				   bool rgb)
+				   bool rgb, bool limited_range)
 {
 	struct adv7511_video_config config;
 	unsigned int mode;
@@ -227,7 +237,9 @@ static void adv7511_set_config_csc(struct adv7511 *adv7511,
 		 */
 		config.csc_enable = true;
 		config.csc_scaling_factor = ADV7511_CSC_SCALING_4;
-		config.csc_coefficents = adv7511_csc_ycbcr_to_rgb;
+		config.csc_coefficents = limited_range ?
+					 adv7511_csc_ycbcr_to_rgb_limited :
+					 adv7511_csc_ycbcr_to_rgb;
 	}
 
 	if (connector->display_info.is_hdmi)
@@ -838,7 +850,8 @@ static void adv7511_bridge_atomic_enable(struct drm_bridge *bridge,
 	if (WARN_ON(!crtc_state))
 		return;
 
-	adv7511_set_config_csc(adv, connector, adv->rgb);
+	adv7511_set_config_csc(adv, connector, adv->rgb,
+			       conn_state->hdmi.is_limited_range);
 
 	adv7511_mode_set(adv, &crtc_state->adjusted_mode);
 
